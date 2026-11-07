@@ -98,7 +98,10 @@ def make_customer(session: Session) -> Callable[..., Customer]:
             email=overrides.get("email", f"customer{n}@example.com"),
         )
         session.add(customer)
-        session.flush()  # sends the INSERT so customer.id is populated
+        # commit, not just flush: factory data stands in for rows that already exist in the
+        # DB. If a test then makes the service call session.rollback() (e.g. on an
+        # overdraft), only work done AFTER this commit is undone, like in real life.
+        session.commit()
         return customer
 
     return _make
@@ -119,7 +122,7 @@ def make_account(
             currency=currency,
         )
         session.add(account)
-        session.flush()
+        session.commit()  # factories commit; see make_customer
         return account
 
     return _make

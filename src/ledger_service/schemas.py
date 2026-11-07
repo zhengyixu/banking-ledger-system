@@ -6,6 +6,9 @@ the API by accident, and a client can't set fields like `id` or `created_at`.
 """
 
 from datetime import datetime
+from decimal import Decimal
+from typing import Annotated
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -32,4 +35,50 @@ class CustomerRead(BaseModel):
     id: int
     name: str
     email: EmailStr
+    created_at: datetime
+
+
+# --- Accounts & money movement --------------------------------------------------------
+# Money rules live in the *type*: Decimal (never float), at most 2 decimal places, at most
+# 18 digits to match Numeric(18, 2). Anything else is rejected with a 422 before our code
+# runs. In JSON responses Pydantic writes Decimals as strings ("125.50"), so clients never
+# parse money through a float.
+
+PositiveMoney = Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=2)]
+NonNegativeMoney = Annotated[Decimal, Field(ge=0, max_digits=18, decimal_places=2)]
+
+
+class AccountCreate(BaseModel):
+    customer_id: int
+    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")  # ISO-4217 shape, e.g. USD
+    opening_deposit: NonNegativeMoney = Decimal("0.00")
+
+
+class MoneyMovement(BaseModel):
+    """Body for both deposits and withdrawals: always a positive amount.
+
+    The *endpoint* says which direction it goes; the stored transaction is signed.
+    """
+
+    amount: PositiveMoney
+
+
+class AccountRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    customer_id: int
+    currency: str
+    balance: Decimal
+    created_at: datetime
+
+
+class TransactionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    account_id: int
+    amount: Decimal  # signed: + deposit, - withdrawal
+    kind: str
+    transfer_id: UUID | None
     created_at: datetime
