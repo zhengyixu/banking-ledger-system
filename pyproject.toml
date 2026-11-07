@@ -34,7 +34,8 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# Alembic-generated files: leave them exactly as generated.
+exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-exclude = ["migrations/versions"]

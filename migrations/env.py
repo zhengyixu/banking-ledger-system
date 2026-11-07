@@ -23,7 +23,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # One source of truth for the DB URL: our settings, not alembic.ini.
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Code that drives Alembic programmatically (the pytest fixtures) can pass a different
+# URL via `cfg.attributes["url"]`, so tests never migrate the dev database.
+config.set_main_option("sqlalchemy.url", config.attributes.get("url", settings.database_url))
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
