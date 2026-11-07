@@ -1,7 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, func
+from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ledger_service.db import Base
@@ -18,6 +19,25 @@ class Customer(Base):
     accounts: Mapped[list["Account"]] = relationship(back_populates="customer")
 
 
+class Transaction(Base):
+    __tablename__ = "transactions"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('deposit', 'withdrawal', 'transfer_in', 'transfer_out')",
+            name="ck_transactions_kind",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    kind: Mapped[str] = mapped_column(String)
+    transfer_id: Mapped[UUID | None] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    account: Mapped["Account"] = relationship(back_populates="transactions")
+
+
 class Account(Base):
     __tablename__ = "accounts"
     # Defence in depth: the database itself refuses a negative balance,
@@ -32,15 +52,4 @@ class Account(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     customer: Mapped[Customer] = relationship(back_populates="accounts")
-
-
-# TODO(you): add the `Transaction` model here. Hints:
-#   - table "transactions": id, account_id (FK -> accounts.id), amount (Numeric(18, 2),
-#     signed: + deposit / - withdrawal), kind (String, e.g. "deposit" | "withdrawal" |
-#     "transfer_in" | "transfer_out"), transfer_id (UUID, nullable: pairs the two legs of
-#     a transfer), created_at (server_default=func.now()).
-#   - add `transactions` relationship on Account (back_populates both ways).
-#   - do NOT add an index yet; we'll add one in phase 4 after looking at EXPLAIN.
-#   - then generate migration #2 yourself:
-#       uv run alembic revision --autogenerate -m "add transactions"
-#     and READ the generated file before applying it.
+    transactions: Mapped[list["Transaction"]] = relationship(back_populates="account")
