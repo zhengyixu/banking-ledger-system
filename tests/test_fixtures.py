@@ -47,7 +47,21 @@ def test_make_account_accepts_balance_and_shared_customer(make_customer, make_ac
     assert a.balance == Decimal("125.50")
 
 
-def test_client_fixture_overrides_the_session_dependency(client, session):
-    # The override must point at the test session, not the real SessionLocal.
-    assert app.dependency_overrides[get_session]() is session
+def test_each_request_gets_its_own_session(client, session):
+    # Production creates one Session per request. The client fixture mirrors that, because a
+    # Session reused after a failed request can stay unusable (see the overdraft tests).
+    override = app.dependency_overrides[get_session]
+    first, second = override(), override()
+    session_1, session_2 = next(first), next(second)
+
+    assert session_1 is not session
+    assert session_1 is not session_2
+    first.close()
+    second.close()
     assert client.get("/health").status_code == 200
+
+
+def test_data_made_with_factories_is_visible_to_requests(client, make_account):
+    account = make_account(balance="12.34")
+
+    assert client.get(f"/v1/accounts/{account.id}").json()["balance"] == "12.34"

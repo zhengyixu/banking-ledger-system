@@ -4,11 +4,12 @@ How the pieces fit together:
 
     engine (once per test run)   -> wipes the *_test database, runs `alembic upgrade head`
         |
-    session (once per test)      -> opens a transaction, binds a Session to it, and rolls
-        |                           everything back afterwards, even if the code under
-        |                           test called session.commit()
-    client (once per test)       -> FastAPI TestClient whose `get_session` dependency is
-                                    replaced by that same session
+    connection (once per test)   -> one connection + outer transaction, rolled back at the end,
+        |                           even if the code under test called session.commit()
+    session (once per test)      -> the test's own Session on that connection (factories,
+        |                           assertions)
+    client (once per test)       -> FastAPI TestClient; every REQUEST gets a fresh Session on
+                                    the same connection, exactly like production
 
 So every test starts with empty tables, and tests can't affect each other.
 """
@@ -22,7 +23,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
@@ -61,23 +62,38 @@ def engine() -> Iterator[Engine]:
 
 
 @pytest.fixture
-def session(engine: Engine) -> Iterator[Session]:
-    """A Session whose work is always rolled back at the end of the test."""
-    with engine.connect() as connection:
-        outer = connection.begin()
-        # "create_savepoint": session.commit() only releases a SAVEPOINT, it does not
-        # commit `outer`. That's what lets code under test call commit() freely.
-        with Session(
-            bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
-        ) as test_session:
-            yield test_session
+def connection(engine: Engine) -> Iterator[Connection]:
+    """One connection + one outer transaction per test, rolled back at the end."""
+    with engine.connect() as conn:
+        outer = conn.begin()
+        yield conn
         outer.rollback()
 
 
+def _new_session(connection: Connection) -> Session:
+    # "create_savepoint": session.commit() only releases a SAVEPOINT, it does not commit the
+    # outer transaction. Every Session built on `connection` sees the same data.
+    return Session(
+        bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
+    )
+
+
 @pytest.fixture
-def client(session: Session) -> Iterator[TestClient]:
-    """TestClient wired to the per-test session instead of the real database."""
-    app.dependency_overrides[get_session] = lambda: session
+def session(connection: Connection) -> Iterator[Session]:
+    """The test's own Session (factories, assertions)."""
+    with _new_session(connection) as test_session:
+        yield test_session
+
+
+@pytest.fixture
+def client(connection: Connection) -> Iterator[TestClient]:
+    """TestClient where EVERY REQUEST gets its own fresh Session, like production."""
+
+    def per_request_session() -> Iterator[Session]:
+        with _new_session(connection) as request_session:
+            yield request_session
+
+    app.dependency_overrides[get_session] = per_request_session
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
