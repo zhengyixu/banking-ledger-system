@@ -1,12 +1,4 @@
-"""Edge cases for money movement: YOUR tests.
-
-Each stub below has a hint. Write the test, watch it fail for the right reason (or, for
-the ones that should already pass, break the code on purpose to see it go red), then make
-it green. Remove the `@todo` line from a stub once you've written the body.
-
-An interviewer who asks "how did you test this?" wants to hear about THESE cases, not the
-happy path.
-"""
+"""Edge cases for money movements."""
 
 from decimal import Decimal
 
@@ -113,19 +105,7 @@ def test_ledger_invariant_balance_equals_sum_of_transactions(session, client, ma
 
 def test_failure_midway_leaves_balance_untouched(session, make_account, monkeypatch):
     """Atomicity: make a step blow up AFTER the balance was changed, then check that the
-    balance and the transactions table are both unchanged.
-
-    Hint: don't patch `session.commit`. Our services use `with session.begin():`, which
-    commits through its own transaction object, so that patch would never be called.
-    Patch a step the function really runs, using the name as `accounts.py` sees it:
-
-        monkeypatch.setattr(account_service, "Transaction", boom)   # boom() raises
-
-    In deposit() the balance changes BEFORE Transaction(...) is built, which is exactly
-    the "half done" moment we want to prove gets rolled back.
-    Afterwards call session.expire_all() so the check re-reads the database instead of
-    trusting in-memory values.
-    Think: why does the `with session.begin():` block make this test pass for free?"""
+    balance and the transactions table are both unchanged."""
     account = make_account(balance="100.00")
 
     def boom(*args, **kwargs):
@@ -164,10 +144,19 @@ def test_opening_deposit_and_account_are_created_together(session, make_customer
     assert rows == []
 
 
-@todo
-def test_service_rejects_non_positive_amount_even_when_called_directly():
+@pytest.mark.parametrize("amount", [Decimal("-1"), Decimal("0")])
+@pytest.mark.parametrize("function", [account_service.deposit, account_service.withdraw])
+def test_service_rejects_non_positive_amount_even_when_called_directly(
+    session, make_account, function, amount
+):
     """Call services.accounts.deposit(session, id, Decimal('-1')) directly, bypassing the
-    HTTP schema. Which exception do you raise, and why guard here at all?"""
+    HTTP schema."""
+    account = make_account(balance="100.00")
+    with pytest.raises(ValueError):
+        function(session, account.id, amount)
+
+    session.expire_all()
+    assert session.get(Account, account.id).balance == Decimal("100.00")
 
 
 @pytest.mark.skip(reason="LATER (phase 3): needs separate DB connections, not the rollback session")
