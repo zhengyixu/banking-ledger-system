@@ -8,59 +8,160 @@ An interviewer who asks "how did you test this?" wants to hear about THESE cases
 happy path.
 """
 
+from decimal import Decimal
+
 import pytest
+from sqlalchemy import func, select
+
+from ledger_service.models import Account, Transaction
+from ledger_service.schemas import AccountCreate
+from ledger_service.services import accounts as account_service
+from ledger_service.services.accounts import create_account
 
 todo = pytest.mark.skip(reason="TODO(you): write this test")
 
 
-@todo
-def test_withdraw_exactly_the_balance_succeeds_and_leaves_zero():
+def test_withdraw_exactly_the_balance_succeeds_and_leaves_zero(client, make_account):
     """Boundary: balance 100.00, withdraw 100.00 -> 201 and balance 0.00.
     (Off-by-one trap: `>` vs `>=` in your comparison.)"""
+    account = make_account(balance="100.00")
+    response = client.post(
+        f"/v1/accounts/{account.id}/withdrawals",
+        json={"amount": "100.00"},
+    )
+    assert response.status_code == 201
+    assert client.get(f"/v1/accounts/{account.id}").json()["balance"] == "0.00"
 
 
-@todo
-def test_overdraft_is_rejected_and_changes_nothing():
+def test_overdraft_is_rejected_and_changes_nothing(client, make_account):
     """balance 50.00, withdraw 80.00 -> the status code you chose, with a clear `detail`.
     Then prove NOTHING changed: balance still 50.00 AND zero Transaction rows.
     A half-applied failure is the worst kind of bug in a ledger."""
+    account = make_account(balance="50.00")
+    response = client.post(
+        f"/v1/accounts/{account.id}/withdrawals",
+        json={"amount": "80.00"},
+    )
+    assert response.status_code == 422
+    assert client.get(f"/v1/accounts/{account.id}").json()["balance"] == "50.00"
 
 
-@todo
-def test_overdraft_by_one_cent_is_rejected():
+def test_overdraft_by_one_cent_is_rejected(client, make_account):
     """balance 50.00, withdraw 50.01. Decimal comparison must be exact. This is the case
     float arithmetic would get wrong in other systems."""
+    account = make_account(balance="50.00")
+    response = client.post(
+        f"/v1/accounts/{account.id}/withdrawals",
+        json={"amount": "50.01"},
+    )
+    assert response.status_code == 422
+    assert client.get(f"/v1/accounts/{account.id}").json()["balance"] == "50.00"
 
 
-@todo
-def test_withdraw_from_empty_account_is_rejected():
+def test_withdraw_from_empty_account_is_rejected(client, make_account):
     """balance 0.00, any withdrawal -> rejected."""
+    account = make_account()
+    response = client.post(
+        f"/v1/accounts/{account.id}/withdrawals",
+        json={"amount": "0.01"},
+    )
+    assert response.status_code == 422
 
 
-@todo
-def test_ten_deposits_of_ten_cents_equal_exactly_one_dollar():
+def test_ten_deposits_of_ten_cents_equal_exactly_one_dollar(client, make_account):
     """Ten deposits of "0.10" -> balance exactly "1.00". Why does this matter?
     (0.1 + 0.1 + ... as floats != 1.0)"""
+    account = make_account()
+    for _ in range(10):
+        response = client.post(
+            f"/v1/accounts/{account.id}/deposits",
+            json={"amount": "0.10"},
+        )
+        assert response.status_code == 201
+    assert client.get(f"/v1/accounts/{account.id}").json()["balance"] == "1.00"
 
 
-@todo
-def test_ledger_invariant_balance_equals_sum_of_transactions():
+def test_ledger_invariant_balance_equals_sum_of_transactions(session, client, make_customer):
     """After a mix of deposits and withdrawals (including an opening deposit and one
     rejected overdraft), assert  account.balance == SUM(transactions.amount)  with a real
     SQL aggregate:  select(func.sum(Transaction.amount)).where(...)."""
+    customer = make_customer()
+    account = create_account(
+        session, AccountCreate(customer_id=customer.id, opening_deposit=Decimal("100.00"))
+    )
+    response = client.post(
+        f"/v1/accounts/{account.id}/deposits",
+        json={"amount": "50.00"},
+    )
+    assert response.status_code == 201
+    assert client.get(f"/v1/accounts/{account.id}").json()["balance"] == "150.00"
+    response = client.post(
+        f"/v1/accounts/{account.id}/withdrawals",
+        json={"amount": "250.00"},
+    )
+    assert response.status_code == 422
+    response = client.post(
+        f"/v1/accounts/{account.id}/withdrawals",
+        json={"amount": "100.00"},
+    )
+    assert response.status_code == 201
+    total = session.execute(
+        select(func.sum(Transaction.amount)).where(Transaction.account_id == account.id)
+    ).scalar()
+    assert client.get(f"/v1/accounts/{account.id}").json()["balance"] == f"{total}"
 
 
-@todo
-def test_failure_midway_leaves_balance_untouched(monkeypatch):
-    """Atomicity: make the commit blow up (monkeypatch session.commit to raise) and check
-    the balance and the transactions table are both unchanged after rolling back.
-    Think: what does your service need to do on an unexpected exception?"""
+def test_failure_midway_leaves_balance_untouched(session, make_account, monkeypatch):
+    """Atomicity: make a step blow up AFTER the balance was changed, then check that the
+    balance and the transactions table are both unchanged.
+
+    Hint: don't patch `session.commit`. Our services use `with session.begin():`, which
+    commits through its own transaction object, so that patch would never be called.
+    Patch a step the function really runs, using the name as `accounts.py` sees it:
+
+        monkeypatch.setattr(account_service, "Transaction", boom)   # boom() raises
+
+    In deposit() the balance changes BEFORE Transaction(...) is built, which is exactly
+    the "half done" moment we want to prove gets rolled back.
+    Afterwards call session.expire_all() so the check re-reads the database instead of
+    trusting in-memory values.
+    Think: why does the `with session.begin():` block make this test pass for free?"""
+    account = make_account(balance="100.00")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(account_service, "Transaction", boom)
+    with pytest.raises(RuntimeError):
+        account_service.deposit(session, account.id, Decimal("10.00"))
+    # account_service.deposit(session, account.id, Decimal("10.00"))
+
+    session.expire_all()
+    assert session.get(Account, account.id).balance == Decimal("100.00")
 
 
-@todo
-def test_opening_deposit_and_account_are_created_together():
+def test_opening_deposit_and_account_are_created_together(session, make_customer, monkeypatch):
     """If recording the opening deposit fails, the account must not exist either.
-    (One commit for both. Prove it.)"""
+    (One transaction for both. Prove it.)
+
+    Hint: same technique as the test above: monkeypatch `account_service.Transaction`
+    with a function that raises, call create_account(...) with opening_deposit > 0 inside
+    pytest.raises, then query the accounts table for that customer and assert it is empty.
+    Use session.expire_all() first. The account row was flushed, so this proves the
+    rollback undid it, not that it was never sent."""
+    customer = make_customer()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(account_service, "Transaction", boom)
+    with pytest.raises(RuntimeError):
+        create_account(
+            session, AccountCreate(customer_id=customer.id, opening_deposit=Decimal("100.00"))
+        )
+    session.expire_all()
+    rows = session.scalars(select(Account).where(Account.customer_id == customer.id)).all()
+    assert rows == []
 
 
 @todo
