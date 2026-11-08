@@ -25,7 +25,7 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from ledger_service.config import settings
 from ledger_service.db import get_session
@@ -97,6 +97,21 @@ def client(connection: Connection) -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def committed_sessions(engine: Engine) -> Iterator[sessionmaker[Session]]:
+    """Sessions that REALLY commit, for tests that need several connections at once.
+
+    The normal `session` can't show concurrency: everything shares one connection and one
+    never-committed transaction. Here each `committed_sessions()` call returns a brand-new
+    Session on its own connection, so two threads genuinely compete for row locks.
+
+    Because the data is truly committed, we wipe every table afterwards.
+    """
+    yield sessionmaker(engine, expire_on_commit=False)
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE transactions, accounts, customers RESTART IDENTITY CASCADE"))
 
 
 # --- Test-data factories -------------------------------------------------------------
