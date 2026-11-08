@@ -26,7 +26,6 @@ def transactions_of(session, account_id):
 # --- create account -------------------------------------------------------------------
 
 
-@needs_service
 def test_create_account_defaults_to_usd_and_zero_balance(client, make_customer):
     customer = make_customer()
 
@@ -40,7 +39,6 @@ def test_create_account_defaults_to_usd_and_zero_balance(client, make_customer):
     assert response.headers["Location"] == f"/v1/accounts/{body['id']}"
 
 
-@needs_service
 def test_create_account_with_opening_deposit_records_a_deposit(client, session, make_customer):
     customer = make_customer()
 
@@ -57,7 +55,6 @@ def test_create_account_with_opening_deposit_records_a_deposit(client, session, 
     assert [(t.kind, t.amount) for t in rows] == [("deposit", Decimal("250.75"))]
 
 
-@needs_service
 def test_create_account_for_unknown_customer_returns_404(client):
     response = client.post("/v1/accounts", json={"customer_id": 999999})
 
@@ -104,7 +101,6 @@ def test_get_unknown_account_returns_404(client):
 # --- deposits -------------------------------------------------------------------------
 
 
-@needs_service
 def test_deposit_increases_balance_and_records_a_positive_transaction(
     client, session, make_account
 ):
@@ -122,7 +118,6 @@ def test_deposit_increases_balance_and_records_a_positive_transaction(
     assert [t.amount for t in transactions_of(session, account.id)] == [Decimal("25.50")]
 
 
-@needs_service
 def test_deposit_to_unknown_account_returns_404(client):
     response = client.post("/v1/accounts/999999/deposits", json={"amount": "10.00"})
 
@@ -132,7 +127,6 @@ def test_deposit_to_unknown_account_returns_404(client):
 # --- withdrawals ----------------------------------------------------------------------
 
 
-@needs_service
 def test_withdraw_decreases_balance_and_records_a_negative_transaction(
     client, session, make_account
 ):
@@ -148,7 +142,6 @@ def test_withdraw_decreases_balance_and_records_a_negative_transaction(
     assert [t.amount for t in transactions_of(session, account.id)] == [Decimal("-30.00")]
 
 
-@needs_service
 def test_withdraw_from_unknown_account_returns_404(client):
     response = client.post("/v1/accounts/999999/withdrawals", json={"amount": "10.00"})
 
