@@ -8,7 +8,7 @@ for `NotFound` also covers CustomerNotFound, AccountNotFound and any future subc
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from ledger_service.exceptions import Conflict, NotFound
+from ledger_service.exceptions import Conflict, InsufficientFunds, NotFound
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -21,8 +21,6 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_conflict(request: Request, exc: Conflict) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_409_CONFLICT)
 
-    # TODO(you): register a handler for InsufficientFunds, following the two above.
-    #   - choose the status code that matches what you decided in exceptions.py
-    #   - stretch: also return a stable machine-readable "code", e.g.
-    #       {"detail": "...", "code": "insufficient_funds"}
-    #     Clients should branch on `code`, never on the human-readable text.
+    @app.exception_handler(InsufficientFunds)
+    async def handle_insufficient_funds(request: Request, exc: InsufficientFunds) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)

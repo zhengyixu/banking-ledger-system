@@ -7,6 +7,8 @@ The base classes below (NotFound, Conflict) are what the HTTP layer maps, so add
 "not found" case needs no new handler: just subclass NotFound.
 """
 
+from decimal import Decimal
+
 
 class DomainError(Exception):
     """Base class, so callers can catch every business-rule failure at once."""
@@ -38,12 +40,9 @@ class DuplicateEmail(Conflict):
         self.email = email
 
 
-# TODO(you): give InsufficientFunds a useful constructor and message. Hints:
-#   - __init__(self, account_id: int, balance: Decimal, requested: Decimal)
-#   - keep the values as attributes (tests and logs can use them) and build a clear
-#     message, e.g. "Account 7 has 50.00, cannot withdraw 80.00".
-#   - decide: should it subclass DomainError directly, or Conflict (-> 409)? Overdraft is
-#     "valid request, but the current state forbids it". 409 and 422 are both defensible;
-#     pick one and be ready to explain why in an interview.
 class InsufficientFunds(DomainError):
-    pass
+    def __init__(self, account_id: int, balance: Decimal, requested: Decimal) -> None:
+        super().__init__(f"Account {account_id} has {balance}, cannot withdraw {requested}")
+        self.account_id = account_id
+        self.balance = balance
+        self.requested = requested
