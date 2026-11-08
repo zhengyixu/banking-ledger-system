@@ -33,7 +33,6 @@ def balance_of(client, account) -> str:
     return client.get(f"/v1/accounts/{account.id}").json()["balance"]
 
 
-@needs_service
 def test_transfer_moves_money_and_returns_both_legs(client, make_account):
     source = make_account(balance="100.00")
     destination = make_account(balance="20.00")
@@ -57,7 +56,6 @@ def test_transfer_moves_money_and_returns_both_legs(client, make_account):
     assert balance_of(client, destination) == "50.00"
 
 
-@needs_service
 def test_transfer_writes_exactly_two_ledger_rows(client, session, make_account):
     source = make_account(balance="100.00")
     destination = make_account()
@@ -73,7 +71,6 @@ def test_transfer_writes_exactly_two_ledger_rows(client, session, make_account):
     assert rows[0].transfer_id == rows[1].transfer_id
 
 
-@needs_service
 def test_transfer_in_either_direction_between_the_same_accounts(client, make_account):
     a = make_account(balance="100.00")
     b = make_account(balance="100.00")
@@ -85,7 +82,6 @@ def test_transfer_in_either_direction_between_the_same_accounts(client, make_acc
     assert balance_of(client, b) == "85.00"
 
 
-@needs_service
 def test_transfer_from_unknown_account_returns_404(client, make_account):
     destination = make_account()
     response = client.post(
@@ -97,7 +93,6 @@ def test_transfer_from_unknown_account_returns_404(client, make_account):
     assert "999999" in response.json()["detail"]
 
 
-@needs_service
 def test_transfer_to_unknown_account_returns_404(client, make_account):
     source = make_account(balance="10.00")
     response = client.post(
@@ -109,7 +104,6 @@ def test_transfer_to_unknown_account_returns_404(client, make_account):
     assert balance_of(client, source) == "10.00"
 
 
-@needs_service
 def test_transfer_with_insufficient_funds_returns_422_and_changes_nothing(
     client, session, make_account
 ):
@@ -124,7 +118,6 @@ def test_transfer_with_insufficient_funds_returns_422_and_changes_nothing(
     assert list(session.scalars(select(Transaction))) == []
 
 
-@needs_service
 def test_transfer_to_the_same_account_returns_422(client, make_account):
     account = make_account(balance="100.00")
 
@@ -134,7 +127,6 @@ def test_transfer_to_the_same_account_returns_422(client, make_account):
     assert balance_of(client, account) == "100.00"
 
 
-@needs_service
 def test_transfer_between_different_currencies_returns_422(client, make_account):
     usd = make_account(balance="100.00", currency="USD")
     eur = make_account(balance="100.00", currency="EUR")
@@ -146,7 +138,6 @@ def test_transfer_between_different_currencies_returns_422(client, make_account)
     assert balance_of(client, eur) == "100.00"
 
 
-@needs_service
 def test_total_money_is_conserved_by_a_transfer(client, session, make_account):
     source = make_account(balance="100.00")
     destination = make_account(balance="23.45")
