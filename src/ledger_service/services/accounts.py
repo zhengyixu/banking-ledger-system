@@ -9,7 +9,7 @@ from ledger_service.schemas import AccountCreate
 from ledger_service.services.customers import get_customer
 
 
-def _get_account_for_update(session: Session, account_id: int) -> Account:
+def get_account_for_update(session: Session, account_id: int) -> Account:
     account = session.execute(
         select(Account).where(Account.id == account_id).with_for_update()
     ).scalar_one_or_none()
@@ -43,15 +43,15 @@ def create_account(session: Session, data: AccountCreate) -> Account:
         return new_account
 
 
-def _require_positive(amount: Decimal) -> None:
+def require_positive(amount: Decimal) -> None:
     if amount <= 0:
         raise ValueError(f"amount must be positive, got {amount}")
 
 
 def deposit(session: Session, account_id: int, amount: Decimal) -> Transaction:
-    _require_positive(amount)
+    require_positive(amount)
     with session.begin():
-        account = _get_account_for_update(session, account_id)
+        account = get_account_for_update(session, account_id)
         account.balance += amount
         tx = Transaction(account_id=account_id, amount=amount, kind="deposit")
         session.add(tx)
@@ -59,9 +59,9 @@ def deposit(session: Session, account_id: int, amount: Decimal) -> Transaction:
 
 
 def withdraw(session: Session, account_id: int, amount: Decimal) -> Transaction:
-    _require_positive(amount)
+    require_positive(amount)
     with session.begin():
-        account = _get_account_for_update(session, account_id)
+        account = get_account_for_update(session, account_id)
         balance = account.balance
         if amount > balance:
             raise InsufficientFunds(account_id=account_id, balance=balance, requested=amount)
