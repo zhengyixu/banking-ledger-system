@@ -43,7 +43,13 @@ def create_account(session: Session, data: AccountCreate) -> Account:
         return new_account
 
 
+def _require_positive(amount: Decimal) -> None:
+    if amount <= 0:
+        raise ValueError(f"amount must be positive, got {amount}")
+
+
 def deposit(session: Session, account_id: int, amount: Decimal) -> Transaction:
+    _require_positive(amount)
     with session.begin():
         account = _get_account_for_update(session, account_id)
         account.balance += amount
@@ -53,6 +59,7 @@ def deposit(session: Session, account_id: int, amount: Decimal) -> Transaction:
 
 
 def withdraw(session: Session, account_id: int, amount: Decimal) -> Transaction:
+    _require_positive(amount)
     with session.begin():
         account = _get_account_for_update(session, account_id)
         balance = account.balance
