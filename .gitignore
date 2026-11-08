@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+error.txt
 
 # Personal interview-prep notes: local only, never push
 docs/study-notes/
