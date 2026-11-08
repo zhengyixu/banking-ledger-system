@@ -82,3 +82,20 @@ class TransactionRead(BaseModel):
     kind: str
     transfer_id: UUID | None
     created_at: datetime
+
+
+class TransferCreate(BaseModel):
+    from_account_id: int
+    to_account_id: int
+    amount: PositiveMoney
+
+
+class TransferRead(BaseModel):
+    """A transfer is two ledger rows sharing one transfer_id: a debit and a credit."""
+
+    transfer_id: UUID
+    from_account_id: int
+    to_account_id: int
+    amount: Decimal  # always positive here; the signed amounts are inside debit/credit
+    debit: TransactionRead  # kind="transfer_out", negative amount, on the source account
+    credit: TransactionRead  # kind="transfer_in", positive amount, on the destination

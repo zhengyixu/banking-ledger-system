@@ -8,7 +8,12 @@ for `NotFound` also covers CustomerNotFound, AccountNotFound and any future subc
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from ledger_service.exceptions import Conflict, InsufficientFunds, NotFound
+from ledger_service.exceptions import (
+    BusinessRuleViolation,
+    Conflict,
+    InsufficientFunds,
+    NotFound,
+)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -24,3 +29,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(InsufficientFunds)
     async def handle_insufficient_funds(request: Request, exc: InsufficientFunds) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
+
+    # Rules like "no self-transfers" and "same currency only" all become 422 here.
+    @app.exception_handler(BusinessRuleViolation)
+    async def handle_rule_violation(request: Request, exc: BusinessRuleViolation) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=422)

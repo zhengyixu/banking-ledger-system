@@ -46,3 +46,26 @@ class InsufficientFunds(DomainError):
         self.account_id = account_id
         self.balance = balance
         self.requested = requested
+
+
+class BusinessRuleViolation(DomainError):
+    """Well-formed request that breaks a business rule  ->  HTTP 422.
+
+    (InsufficientFunds could subclass this too and drop its own handler: an optional
+    refactor to consider once transfers work.)
+    """
+
+
+class SameAccountTransfer(BusinessRuleViolation):
+    def __init__(self, account_id: int) -> None:
+        super().__init__(f"Cannot transfer from account {account_id} to itself")
+        self.account_id = account_id
+
+
+class CurrencyMismatch(BusinessRuleViolation):
+    def __init__(self, from_currency: str, to_currency: str) -> None:
+        super().__init__(
+            f"Cannot transfer between different currencies ({from_currency} -> {to_currency})"
+        )
+        self.from_currency = from_currency
+        self.to_currency = to_currency
