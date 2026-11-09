@@ -1,11 +1,15 @@
 """Edge cases for money movements."""
 
+import threading
+import time
 from decimal import Decimal
+from threading import Barrier
 
 import pytest
 from sqlalchemy import func, select
 
-from ledger_service.models import Account, Transaction
+from ledger_service.exceptions import InsufficientFunds
+from ledger_service.models import Account, Customer, Transaction
 from ledger_service.schemas import AccountCreate
 from ledger_service.services import accounts as account_service
 from ledger_service.services.accounts import create_account
@@ -159,8 +163,52 @@ def test_service_rejects_non_positive_amount_even_when_called_directly(
     assert session.get(Account, account.id).balance == Decimal("100.00")
 
 
-@pytest.mark.skip(reason="LATER (phase 3): needs separate DB connections, not the rollback session")
-def test_two_concurrent_withdrawals_cannot_overdraw():
+def test_two_concurrent_withdrawals_cannot_overdraw(committed_sessions, monkeypatch):
     """Two threads each withdraw 80.00 from a 100.00 account. Exactly one must win.
     This is what `with_for_update()` is for. The per-test rollback session can't show it
     (both threads would share one transaction), so this test gets its own setup."""
+
+    with committed_sessions() as setup, setup.begin():
+        customer = Customer(name="A", email="a@tt.com")
+        setup.add(customer)
+        setup.flush()
+        account = Account(customer_id=customer.id, balance=Decimal("100.00"))
+        setup.add(account)
+        setup.flush()
+
+    real_tx = account_service.Transaction
+
+    def slow_transaction(*a, **kw):
+        time.sleep(0.3)
+        return real_tx(*a, **kw)
+
+    monkeypatch.setattr(account_service, "Transaction", slow_transaction)
+
+    barrier = threading.Barrier(2)
+    results = []
+
+    def worker(barrier: Barrier, from_account_id: int, amount: Decimal):
+        with committed_sessions() as s:
+            barrier.wait(timeout=5)
+            try:
+                account_service.withdraw(s, from_account_id, amount)
+                results.append("ok")
+            except Exception as e:
+                results.append(e)
+
+    t1 = threading.Thread(target=worker, args=(barrier, account.id, Decimal("80.00")))
+    t2 = threading.Thread(target=worker, args=(barrier, account.id, Decimal("80.00")))
+
+    t1.start()
+    t2.start()
+
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert not t1.is_alive() and not t2.is_alive()
+
+    assert results.count("ok") == 1
+    assert sum(isinstance(r, InsufficientFunds) for r in results) == 1
+    with committed_sessions() as setup, setup.begin():
+        account = setup.get(Account, account.id)
+        assert account.balance == Decimal("20.00")
