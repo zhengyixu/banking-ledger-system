@@ -4,18 +4,21 @@ These call `transfer()` directly (no HTTP), because they are about the rules, no
 Each stub has a hint. Write the test, make sure it can FAIL (remove the thing it protects
 and watch it go red), then restore the code. Remove the `@todo` line once it's written.
 
-The two concurrency tests at the bottom are the real interview material. They need the
-`committed_sessions` fixture (sessions that truly commit and compete for locks).
+The two concurrency tests at the bottom need the `committed_sessions` fixture
+(sessions that truly commit and compete for locks).
 """
 
+import threading
+import time
 from decimal import Decimal
+from threading import Barrier
 
 import pytest
 from sqlalchemy import func
 from sqlalchemy.sql import select
 
 from ledger_service.exceptions import CurrencyMismatch, InsufficientFunds, SameAccountTransfer
-from ledger_service.models import Transaction
+from ledger_service.models import Account, Customer, Transaction
 from ledger_service.schemas import AccountCreate
 from ledger_service.services import transfers as transfer_service
 from ledger_service.services.accounts import create_account
@@ -226,8 +229,7 @@ def test_non_positive_amounts_are_rejected_when_called_directly(session, make_ac
     )
 
 
-@pytest.mark.skip(reason="TODO(you): concurrency test #1. Setup hints in the docstring.")
-def test_two_concurrent_transfers_cannot_overdraw_the_source():
+def test_two_concurrent_transfers_cannot_overdraw_the_source(committed_sessions, monkeypatch):
     """Account A has 100.00. Two threads each transfer 80.00 from A to different
     destinations at the same moment. EXACTLY ONE must succeed; the other must raise
     InsufficientFunds; A must end at 20.00, never negative.
@@ -249,12 +251,59 @@ def test_two_concurrent_transfers_cannot_overdraw_the_source():
     transfers succeed and 160.00 leaves a 100.00 account (money created). With the lock the
     second thread simply waits, then sees 20.00 and is refused.
     Restore `.with_for_update()` afterwards.
-    (Interview point: a concurrency test that cannot fail is worthless; make the bug
+    (Important: a concurrency test that cannot fail is worthless; make the bug
     reproducible before you claim the fix works.)"""
 
+    with committed_sessions() as setup, setup.begin():
+        customer = Customer(name="A", email="a@tt.com")
+        setup.add(customer)
+        setup.flush()
+        accounts = [
+            Account(customer_id=customer.id, balance=Decimal(b)) for b in ("100.00", "0.00", "0.00")
+        ]
+        setup.add_all(accounts)
+        setup.flush()
+        ids = [a.id for a in accounts]
 
-@pytest.mark.skip(reason="TODO(you): concurrency test #2. Setup hints in the docstring.")
-def test_opposite_direction_transfers_do_not_deadlock():
+    real_tx = transfer_service.Transaction
+
+    def slow_transaction(*a, **kw):
+        time.sleep(0.3)
+        return real_tx(*a, **kw)
+
+    monkeypatch.setattr(transfer_service, "Transaction", slow_transaction)
+
+    barrier = threading.Barrier(2)
+    results = []
+
+    def worker(barrier: Barrier, from_account_id: int, to_account_id: int, amount: Decimal):
+        with committed_sessions() as s:
+            barrier.wait(timeout=5)
+            try:
+                transfer_service.transfer(s, from_account_id, to_account_id, amount)
+                results.append("ok")
+            except Exception as e:
+                results.append(e)
+
+    t1 = threading.Thread(target=worker, args=(barrier, ids[0], ids[1], Decimal("80.00")))
+    t2 = threading.Thread(target=worker, args=(barrier, ids[0], ids[2], Decimal("80.00")))
+
+    t1.start()
+    t2.start()
+
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert not t1.is_alive() and not t2.is_alive()
+
+    assert results.count("ok") == 1
+    assert sum(isinstance(r, InsufficientFunds) for r in results) == 1
+    with committed_sessions() as setup, setup.begin():
+        account = setup.get(Account, ids[0])
+        assert account.balance == Decimal("20.00")
+
+
+def test_opposite_direction_transfers_do_not_deadlock(committed_sessions, monkeypatch):
     """Accounts A and B hold 1000.00 each. Thread 1 does A->B and thread 2 does B->A,
     each repeated ~25 times with 1.00. Nothing may raise (no deadlock, no
     OperationalError / 40P01), and in the end balance_a + balance_b == 2000.00.
@@ -265,3 +314,51 @@ def test_opposite_direction_transfers_do_not_deadlock():
     so the totals no longer line up. Then restore the ordered locking.
     Same setup as the first concurrency test (committed_sessions, one Session per thread,
     a Barrier to start together)."""
+    with committed_sessions() as setup, setup.begin():
+        customer = Customer(name="A", email="a@tt.com")
+        setup.add(customer)
+        setup.flush()
+        accounts = [
+            Account(customer_id=customer.id, balance=Decimal(b)) for b in ("1000.00", "1000.00")
+        ]
+        setup.add_all(accounts)
+        setup.flush()
+        ids = [a.id for a in accounts]
+
+    real_tx = transfer_service.Transaction
+
+    def slow_transaction(*a, **kw):
+        time.sleep(0.01)
+        return real_tx(*a, **kw)
+
+    monkeypatch.setattr(transfer_service, "Transaction", slow_transaction)
+
+    barrier = threading.Barrier(2)
+    results = []
+
+    def worker(barrier: Barrier, from_account_id: int, to_account_id: int, amount: Decimal):
+        with committed_sessions() as s:
+            barrier.wait(timeout=5)
+            try:
+                for _ in range(25):
+                    transfer_service.transfer(s, from_account_id, to_account_id, amount)
+                results.append("ok")
+            except Exception as e:
+                results.append(e)
+
+    t1 = threading.Thread(target=worker, args=(barrier, ids[0], ids[1], Decimal("1.00")))
+    t2 = threading.Thread(target=worker, args=(barrier, ids[1], ids[0], Decimal("1.00")))
+
+    t1.start()
+    t2.start()
+
+    t1.join(timeout=60)
+    t2.join(timeout=60)
+
+    assert not t1.is_alive() and not t2.is_alive()
+
+    assert results == ["ok", "ok"]
+    with committed_sessions() as setup, setup.begin():
+        account0 = setup.get(Account, ids[0])
+        account1 = setup.get(Account, ids[1])
+        assert (account0.balance + account1.balance) == Decimal("2000.00")
