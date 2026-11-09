@@ -69,3 +69,8 @@ class CurrencyMismatch(BusinessRuleViolation):
         )
         self.from_currency = from_currency
         self.to_currency = to_currency
+
+
+class InvalidCursor(BusinessRuleViolation):
+    def __init__(self) -> None:
+        super().__init__("Invalid pagination cursor")

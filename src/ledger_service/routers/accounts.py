@@ -1,15 +1,18 @@
 """HTTP layer for accounts and money movement. Thin on purpose: see services/accounts.py."""
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from ledger_service.db import SessionDep
+from ledger_service.pagination import decode_cursor, encode_cursor
 from ledger_service.schemas import (
     AccountCreate,
     AccountRead,
     MoneyMovement,
+    TransactionPage,
     TransactionRead,
 )
 from ledger_service.services import accounts as account_service
+from ledger_service.services import transactions as transaction_service
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -44,3 +47,16 @@ def deposit(account_id: int, body: MoneyMovement, session: SessionDep):
 )
 def withdraw(account_id: int, body: MoneyMovement, session: SessionDep):
     return account_service.withdraw(session, account_id, body.amount)
+
+
+@router.get("/{account_id}/transactions", response_model=TransactionPage)
+def list_transactions(
+    account_id: int,
+    session: SessionDep,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = None,
+):
+    after = decode_cursor(cursor) if cursor else None
+    items, has_more = transaction_service.list_transactions(session, account_id, limit, after)
+    next_cursor = encode_cursor(items[-1]) if has_more else None
+    return TransactionPage(items=items, next_cursor=next_cursor)

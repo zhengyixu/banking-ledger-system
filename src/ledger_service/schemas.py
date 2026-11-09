@@ -99,3 +99,14 @@ class TransferRead(BaseModel):
     amount: Decimal  # always positive here; the signed amounts are inside debit/credit
     debit: TransactionRead  # kind="transfer_out", negative amount, on the source account
     credit: TransactionRead  # kind="transfer_in", positive amount, on the destination
+
+
+class TransactionPage(BaseModel):
+    """One page of an account's history, newest first.
+
+    `next_cursor` is an opaque string: pass it back as `?cursor=` to get the next page.
+    `None` means this was the last page.
+    """
+
+    items: list[TransactionRead]
+    next_cursor: str | None
