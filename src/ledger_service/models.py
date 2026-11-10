@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Numeric, String, Uuid, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ledger_service.db import Base
@@ -14,7 +14,7 @@ class Customer(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(320), unique=True)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     accounts: Mapped[list["Account"]] = relationship(back_populates="customer")
 
@@ -27,7 +27,7 @@ class Transaction(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     kind: Mapped[str] = mapped_column(String)
     transfer_id: Mapped[UUID | None] = mapped_column(Uuid)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
 
@@ -51,7 +51,7 @@ class Account(Base):
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     # Numeric, never float, for money.
     balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"))
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     customer: Mapped[Customer] = relationship(back_populates="accounts")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account")

@@ -155,25 +155,25 @@ def test_rows_with_the_same_created_at_are_neither_skipped_nor_repeated(
         txs = [
             Transaction(
                 account_id=account.id,
-                created_at=datetime.datetime(2026, 2, 11),
+                created_at=datetime.datetime(2026, 2, 11, tzinfo=datetime.UTC),
                 amount=Decimal("1.00"),
                 kind="deposit",
             ),
             Transaction(
                 account_id=account.id,
-                created_at=datetime.datetime(2026, 2, 9),
+                created_at=datetime.datetime(2026, 2, 9, tzinfo=datetime.UTC),
                 amount=Decimal("1.00"),
                 kind="deposit",
             ),
             Transaction(
                 account_id=account.id,
-                created_at=datetime.datetime(2026, 2, 10),
+                created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.UTC),
                 amount=Decimal("1.00"),
                 kind="deposit",
             ),
             Transaction(
                 account_id=account.id,
-                created_at=datetime.datetime(2026, 2, 10),
+                created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.UTC),
                 amount=Decimal("1.00"),
                 kind="deposit",
             ),
