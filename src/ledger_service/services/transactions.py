@@ -1,6 +1,6 @@
 """Reading an account's transaction history (newest first, keyset pagination)."""
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from ledger_service.models import Transaction
@@ -21,10 +21,7 @@ def list_transactions(
     if after is not None:
         created_at, tx_id = after
         stmt = stmt.where(
-            or_(
-                Transaction.created_at < created_at,
-                and_(Transaction.created_at == created_at, Transaction.id < tx_id),
-            )
+            tuple_(Transaction.created_at, Transaction.id) < tuple_(created_at, tx_id)
         )
 
     """Sort by (created_at DESC, id DESC). `created_at` alone is NOT unique: the rows of

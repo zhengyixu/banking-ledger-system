@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, Uuid, func
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Numeric, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ledger_service.db import Base
@@ -21,12 +21,6 @@ class Customer(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
-    __table_args__ = (
-        CheckConstraint(
-            "kind IN ('deposit', 'withdrawal', 'transfer_in', 'transfer_out')",
-            name="ck_transactions_kind",
-        ),
-    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
@@ -36,6 +30,14 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('deposit', 'withdrawal', 'transfer_in', 'transfer_out')",
+            name="ck_transactions_kind",
+        ),
+        Index("ix_transactions_account_created_id", "account_id", created_at.desc(), id.desc()),
+    )
 
 
 class Account(Base):
