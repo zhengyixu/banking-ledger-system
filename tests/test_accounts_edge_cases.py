@@ -14,12 +14,10 @@ from ledger_service.schemas import AccountCreate
 from ledger_service.services import accounts as account_service
 from ledger_service.services.accounts import create_account
 
-todo = pytest.mark.skip(reason="TODO(you): write this test")
-
 
 def test_withdraw_exactly_the_balance_succeeds_and_leaves_zero(client, make_account):
     """Boundary: balance 100.00, withdraw 100.00 -> 201 and balance 0.00.
-    (Off-by-one trap: `>` vs `>=` in your comparison.)"""
+    (Off-by-one trap: `>` vs `>=` in the comparison.)"""
     account = make_account(balance="100.00")
     response = client.post(
         f"/v1/accounts/{account.id}/withdrawals",
@@ -126,13 +124,11 @@ def test_failure_midway_leaves_balance_untouched(session, make_account, monkeypa
 
 def test_opening_deposit_and_account_are_created_together(session, make_customer, monkeypatch):
     """If recording the opening deposit fails, the account must not exist either.
-    (One transaction for both. Prove it.)
+    (One transaction for both.)
 
-    Hint: same technique as the test above: monkeypatch `account_service.Transaction`
-    with a function that raises, call create_account(...) with opening_deposit > 0 inside
-    pytest.raises, then query the accounts table for that customer and assert it is empty.
-    Use session.expire_all() first. The account row was flushed, so this proves the
-    rollback undid it, not that it was never sent."""
+    `Transaction` is monkeypatched to raise. The account row was already flushed by then,
+    so an empty accounts table afterwards proves the rollback undid it, not that it was
+    never sent."""
     customer = make_customer()
 
     def boom(*args, **kwargs):

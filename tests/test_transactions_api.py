@@ -1,14 +1,9 @@
 """Transaction history API: the HTTP *contract* for GET /v1/accounts/{id}/transactions.
 
-Tests marked `needs_service` are skipped until you implement services/transactions.py.
-Delete the marker once `list_transactions()` works. The validation tests already run: the
-bad `limit` / `cursor` is rejected before your code is called.
-
-NOTE for the tie-break: inside a test, every row gets the SAME `created_at`, because
-Postgres `now()` is the start time of the (never-committed) test transaction. So these
-tests only pass if `id` really is used as the tie-breaker. That is on purpose.
-
-The last two tests are yours: they target the two classic keyset-pagination bugs.
+Note on the tie-break: inside a test every row gets the SAME `created_at`, because Postgres
+`now()` is the start time of the (never-committed) test transaction. So these tests only
+pass if `id` really is used as the tie-breaker. The last two tests target the two classic
+keyset-pagination bugs (rows shifting between pages, and ties on the sort column).
 """
 
 import base64
@@ -18,9 +13,6 @@ from decimal import Decimal
 import pytest
 
 from ledger_service.models import Transaction
-
-needs_service = pytest.mark.skip(reason="TODO(you): implement services/transactions.py")
-todo = pytest.mark.skip(reason="TODO(you): write this test")
 
 
 def deposit(client, account, amount):
@@ -156,7 +148,7 @@ def test_rows_with_the_same_created_at_are_neither_skipped_nor_repeated(
     """The tie-break test. Insert Transaction rows DIRECTLY (session.add + commit), several
     sharing one explicit `created_at` and a few with other timestamps, then page through
     with limit=1. Every row must appear exactly once, in (created_at, id) descending order.
-    Prove it can fail: drop `id` from the ORDER BY / comparison in your service and watch
+    Prove it can fail: drop `id` from the ORDER BY / comparison in the service and watch
     rows go missing or repeat."""
     account = make_account()
     with session.begin():

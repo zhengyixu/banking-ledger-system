@@ -1,11 +1,7 @@
-"""Transfer API tests: the HTTP *contract* your transfer service has to meet.
+"""Transfer API tests: the HTTP *contract* the transfer service has to meet.
 
-Tests marked `needs_service` are skipped until you implement services/transfers.py.
-Delete the marker once `transfer()` works. Validation tests already run: the schema
-rejects those requests before your code is called.
-
-Rules for the service itself (atomicity, locking, guards, the ledger invariant) belong in
-tests/test_transfers_service.py, which is yours to write.
+Rules for the service itself (atomicity, locking, guards, the ledger invariant) live in
+tests/test_transfers_service.py.
 """
 
 from decimal import Decimal
@@ -14,8 +10,6 @@ import pytest
 from sqlalchemy import select
 
 from ledger_service.models import Account, Transaction
-
-needs_service = pytest.mark.skip(reason="TODO(you): implement services/transfers.py")
 
 
 def post_transfer(client, source, destination, amount):
@@ -149,7 +143,7 @@ def test_total_money_is_conserved_by_a_transfer(client, session, make_account):
     assert total == Decimal("123.45")
 
 
-# --- validation (runs now: the schema rejects these before your code is called) ---------
+# --- validation (the schema rejects these before the service is called) ---------
 
 
 @pytest.mark.parametrize("amount", ["0", "0.00", "-5.00", "1.234", "abc", "", None])

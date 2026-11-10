@@ -1,8 +1,7 @@
-"""Account API tests: the *contract* your service has to meet.
+"""Account API tests: the *contract* the account service has to meet.
 
-Tests marked `needs_service` are skipped until you implement services/accounts.py.
-Workflow: implement one function, delete `needs_service` from its tests, run pytest,
-repeat. (Tests that don't need your code, like validation and 404s, already run.)
+Validation and 404 cases are rejected before the service runs; the rest exercise the
+real service through the HTTP layer.
 """
 
 from decimal import Decimal
@@ -11,8 +10,6 @@ import pytest
 from sqlalchemy import select
 
 from ledger_service.models import Transaction
-
-needs_service = pytest.mark.skip(reason="TODO(you): implement services/accounts.py")
 
 
 def transactions_of(session, account_id):
@@ -78,7 +75,7 @@ def test_create_account_rejects_invalid_payload(client, payload):
     assert client.post("/v1/accounts", json=payload).status_code == 422
 
 
-# --- read account (does not need your service code) -----------------------------------
+# --- read account -----------------------------------
 
 
 def test_get_account_returns_200(client, make_account):
@@ -148,7 +145,7 @@ def test_withdraw_from_unknown_account_returns_404(client):
     assert response.status_code == 404
 
 
-# --- amount validation (runs now: the schema rejects these before your code is called) ---
+# --- amount validation (the schema rejects these before the service is called) ---
 
 
 @pytest.mark.parametrize("action", ["deposits", "withdrawals"])

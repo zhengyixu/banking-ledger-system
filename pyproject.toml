@@ -1,7 +1,7 @@
 [project]
 name = "ledger-service"
 version = "0.1.0"
-description = "Add your description here"
+description = "Banking-style ledger API: FastAPI, SQLAlchemy 2.1, Alembic, PostgreSQL"
 authors = [
     { name = "zhengyixu", email = "14861325+zhengyixu@users.noreply.github.com" }
 ]

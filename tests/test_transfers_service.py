@@ -1,11 +1,10 @@
-"""Service-level transfer tests: YOUR tests.
+"""Service-level transfer tests.
 
 These call `transfer()` directly (no HTTP), because they are about the rules, not the API.
-Each stub has a hint. Write the test, make sure it can FAIL (remove the thing it protects
-and watch it go red), then restore the code. Remove the `@todo` line once it's written.
+Each test was checked by breaking the code it protects and watching it fail.
 
-The two concurrency tests at the bottom need the `committed_sessions` fixture
-(sessions that truly commit and compete for locks).
+The two concurrency tests at the bottom use the `committed_sessions` fixture (sessions that
+truly commit and compete for row locks).
 """
 
 import threading
@@ -23,8 +22,6 @@ from ledger_service.schemas import AccountCreate
 from ledger_service.services import transfers as transfer_service
 from ledger_service.services.accounts import create_account
 from ledger_service.services.transfers import transfer
-
-todo = pytest.mark.skip(reason="TODO(you): write this test")
 
 
 def test_transfer_conserves_money_and_the_two_legs_sum_to_zero(session, make_account):
@@ -125,9 +122,8 @@ def test_failure_on_the_second_leg_rolls_back_the_first(session, make_account, m
 
 
 def test_same_account_is_rejected_before_touching_the_database(session):
-    """Expect SameAccountTransfer. Hint: how could you prove no lock/query happened?
-    (e.g. pass an id that doesn't exist: if the guard runs first you get
-    SameAccountTransfer, not AccountNotFound)."""
+    """Expect SameAccountTransfer. Using an id that doesn't exist proves the guard runs
+    before any lock or query: otherwise we would get AccountNotFound."""
     from_account_id = to_account_id = 999999
     with pytest.raises(SameAccountTransfer):
         transfer(session, from_account_id, to_account_id, Decimal("50.01"))
@@ -242,17 +238,12 @@ def test_two_concurrent_transfers_cannot_overdraw_the_source(committed_sessions,
       - use a threading.Barrier so both threads call transfer() at the same instant.
       - collect each thread's result or exception, join the threads, then read the final
         balances with a fresh Session.
-    Prove it can fail, RELIABLY: I tried removing `.with_for_update()` and running this a
-    few times; the race window is so small the test kept passing, so don't trust that.
-    Widen the window instead: monkeypatch `transfers.Transaction` with a wrapper that does
-    `time.sleep(0.3)` and then builds the real `Transaction`. That sleep sits between
-    "read the balance" and "commit", so without the lock both threads read 100.00 and both
-    go ahead. I measured it: with the lock this test passes every time; without it BOTH
-    transfers succeed and 160.00 leaves a 100.00 account (money created). With the lock the
-    second thread simply waits, then sees 20.00 and is refused.
-    Restore `.with_for_update()` afterwards.
-    (Important: a concurrency test that cannot fail is worthless; make the bug
-    reproducible before you claim the fix works.)"""
+    Making the race reproducible: removing `.with_for_update()` alone usually still passes,
+    because the race window is microseconds. So the test monkeypatches `transfers.Transaction`
+    with a wrapper that sleeps 0.3 s and then builds the real `Transaction`. That sleep sits
+    between "read the balance" and "commit": without the lock both threads read 100.00 and
+    both transfers succeed (160.00 leaves a 100.00 account). With the lock the second thread
+    waits, sees 20.00 and is refused. A concurrency test that cannot fail is worthless."""
 
     with committed_sessions() as setup, setup.begin():
         customer = Customer(name="A", email="a@tt.com")
@@ -308,12 +299,10 @@ def test_opposite_direction_transfers_do_not_deadlock(committed_sessions, monkey
     each repeated ~25 times with 1.00. Nothing may raise (no deadlock, no
     OperationalError / 40P01), and in the end balance_a + balance_b == 2000.00.
 
-    Prove it can fail: change your service to lock in the order (source, destination)
-    instead of ascending id, and run the test. I measured this: one thread dies with
-    sqlalchemy.exc.OperationalError (Postgres' "deadlock detected") and the other finishes,
-    so the totals no longer line up. Then restore the ordered locking.
-    Same setup as the first concurrency test (committed_sessions, one Session per thread,
-    a Barrier to start together)."""
+    Locking in (source, destination) order instead of ascending id makes one thread die with
+    sqlalchemy.exc.OperationalError ("deadlock detected"). Same setup as the overdraw test:
+    committed_sessions, one Session per thread, a Barrier to start together. The injected
+    sleep is short because the loop repeats it 25 times."""
     with committed_sessions() as setup, setup.begin():
         customer = Customer(name="A", email="a@tt.com")
         setup.add(customer)
