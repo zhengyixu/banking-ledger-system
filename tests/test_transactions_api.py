@@ -12,8 +12,12 @@ The last two tests are yours: they target the two classic keyset-pagination bugs
 """
 
 import base64
+import datetime
+from decimal import Decimal
 
 import pytest
+
+from ledger_service.models import Transaction
 
 needs_service = pytest.mark.skip(reason="TODO(you): implement services/transactions.py")
 todo = pytest.mark.skip(reason="TODO(you): write this test")
@@ -29,7 +33,6 @@ def history(client, account, **params):
     return client.get(f"/v1/accounts/{account.id}/transactions", params=params)
 
 
-@needs_service
 def test_empty_history_is_an_empty_page(client, make_account):
     account = make_account()
     response = history(client, account)
@@ -37,13 +40,11 @@ def test_empty_history_is_an_empty_page(client, make_account):
     assert response.json() == {"items": [], "next_cursor": None}
 
 
-@needs_service
 def test_unknown_account_is_404(client):
     response = client.get("/v1/accounts/999999/transactions")
     assert response.status_code == 404
 
 
-@needs_service
 def test_history_is_newest_first_and_has_the_transaction_fields(client, make_account):
     account = make_account()
     for amount in ("1.00", "2.00", "3.00"):
@@ -55,7 +56,6 @@ def test_history_is_newest_first_and_has_the_transaction_fields(client, make_acc
     assert set(items[0]) == {"id", "account_id", "amount", "kind", "transfer_id", "created_at"}
 
 
-@needs_service
 def test_history_only_contains_this_accounts_rows(client, make_account):
     mine, other = make_account(), make_account()
     deposit(client, mine, "1.00")
@@ -66,7 +66,6 @@ def test_history_only_contains_this_accounts_rows(client, make_account):
     assert [item["account_id"] for item in items] == [mine.id]
 
 
-@needs_service
 def test_walking_the_pages_returns_every_row_exactly_once(client, make_account):
     account = make_account()
     expected_ids = [deposit(client, account, "1.00")["id"] for _ in range(5)][::-1]
@@ -85,7 +84,6 @@ def test_walking_the_pages_returns_every_row_exactly_once(client, make_account):
     assert seen == expected_ids
 
 
-@needs_service
 def test_exact_multiple_of_limit_has_no_phantom_next_page(client, make_account):
     """4 rows, limit 2: the second page is the last one, so next_cursor must be null.
     (Off-by-one trap with the `limit + 1` trick.)"""
@@ -121,16 +119,37 @@ def test_garbage_cursor_is_422_not_500(client, make_account, cursor):
     assert response.status_code == 422
 
 
-@todo
 def test_new_rows_between_pages_do_not_shift_or_duplicate_results(client, make_account):
     """Why keyset beats OFFSET. Create 4 deposits, fetch page 1 with limit=2, then make
     ANOTHER deposit, then fetch page 2 with the cursor. Page 2 must be exactly the two
     OLDEST rows, with no row repeated from page 1 and the new deposit absent (it is newer
     than the cursor, so it belongs to a page the client has already passed).
     With OFFSET 2 the new row would push page-1 rows onto page 2 (duplicates)."""
+    account = make_account()
+    ids = []
+    for _ in range(4):
+        response = deposit(client, account, "1.00")
+        ids.append(response["id"])
+
+    first = history(client, account, limit=2).json()
+    first_page = first["items"]
+
+    response = deposit(client, account, "1.00")
+    new_id = response["id"]
+
+    second = history(client, account, limit=2, cursor=first["next_cursor"]).json()
+    second_page = second["items"]
+
+    first_page_ids = [tx["id"] for tx in first_page]
+    second_page_ids = [tx["id"] for tx in second_page]
+
+    assert first_page_ids == [ids[3], ids[2]]
+    assert second_page_ids == [ids[1], ids[0]]
+
+    assert second["next_cursor"] is None
+    assert new_id not in first_page_ids + second_page_ids
 
 
-@todo
 def test_rows_with_the_same_created_at_are_neither_skipped_nor_repeated(
     session, client, make_account
 ):
@@ -139,3 +158,48 @@ def test_rows_with_the_same_created_at_are_neither_skipped_nor_repeated(
     with limit=1. Every row must appear exactly once, in (created_at, id) descending order.
     Prove it can fail: drop `id` from the ORDER BY / comparison in your service and watch
     rows go missing or repeat."""
+    account = make_account()
+    with session.begin():
+        txs = [
+            Transaction(
+                account_id=account.id,
+                created_at=datetime.datetime(2026, 2, 11),
+                amount=Decimal("1.00"),
+                kind="deposit",
+            ),
+            Transaction(
+                account_id=account.id,
+                created_at=datetime.datetime(2026, 2, 9),
+                amount=Decimal("1.00"),
+                kind="deposit",
+            ),
+            Transaction(
+                account_id=account.id,
+                created_at=datetime.datetime(2026, 2, 10),
+                amount=Decimal("1.00"),
+                kind="deposit",
+            ),
+            Transaction(
+                account_id=account.id,
+                created_at=datetime.datetime(2026, 2, 10),
+                amount=Decimal("1.00"),
+                kind="deposit",
+            ),
+        ]
+        session.add_all(txs)
+
+    expected = [t.id for t in sorted(txs, key=lambda t: (t.created_at, t.id), reverse=True)]
+
+    page_ids = []
+    cursor = None
+    for _ in range(10):
+        body = history(client, account, limit=1, cursor=cursor).json()
+        page = body["items"]
+        cursor = body["next_cursor"]
+        ids = [tx["id"] for tx in page]
+        page_ids = page_ids + ids
+        if cursor is None:
+            break
+
+    assert page_ids == expected
+    assert cursor is None
