@@ -49,3 +49,6 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q
+
+      - name: Build Docker image
+        run: docker build -t ledger-service .
