@@ -6,7 +6,7 @@ SQLAlchemy 2.1, Alembic, PostgreSQL 17, pytest. Money correctness matters more t
 ## Commands
 
 ```bash
-docker compose up -d --wait                      # Postgres on localhost:5455
+docker compose up -d --wait db                   # Postgres on localhost:5455 (plain `up` also starts migrate + app on :8000)
 uv sync
 uv run alembic upgrade head                      # dev database
 uv run pytest -q                                 # needs the ledger_test database (compose creates it)

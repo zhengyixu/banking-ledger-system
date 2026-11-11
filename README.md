@@ -26,6 +26,9 @@ pagination.
   `CHECK` on transaction kinds, `UNIQUE` on customer email.
 - **Keyset pagination** for the history (`limit` + opaque `cursor`), sorted by
   `(created_at, id)` so rows that share a timestamp are neither skipped nor repeated.
+  Backed by a composite index, so every page costs the same (see Performance).
+- **Runs anywhere with Docker.** `docker compose up --build` starts Postgres, runs the
+  migrations once, then starts the API.
 
 ## API
 
@@ -77,11 +80,39 @@ errors.py  the one place domain exceptions become HTTP status codes
 - Atomicity is tested by forcing a failure midway and asserting that balances *and* ledger
   rows are unchanged.
 
+## Performance
+
+The history query on the hot account (300k of the 500k seeded rows),
+`EXPLAIN (ANALYZE, BUFFERS)`, warm cache, limit 50:
+
+| | Plan | Buffers | Time |
+|---|---|---|---|
+| Before, first page | Parallel Seq Scan + top-N sort | 3,763 | 25.1 ms |
+| Index `(account_id, created_at DESC, id DESC)`, first page | Index Scan | 4 | 0.06 ms |
+| Index, page at depth 150k, `OR` cursor filter | Index Scan, cursor in `Filter` | 1,846 | 16.4 ms |
+| Index, page at depth 150k, `(created_at, id) < (...)` | Index Scan, cursor in `Index Cond` | 5 | 0.08 ms |
+
+The index alone fixed the first page but not deep pages: the portable form of the cursor,
+`created_at < c OR (created_at = c AND id < x)`, cannot be used as an index boundary, so
+Postgres walked the account's entries and filtered. The row-value comparison
+`(created_at, id) < (c, x)` is a real index condition, so a page at depth 150k costs
+the same as page 1. `created_at` is `timestamptz`; the migration converts the existing UTC values with
+an explicit `AT TIME ZONE 'UTC'` and round-trips on downgrade.
+
 ## Run it
+
+Everything in Docker (Postgres, one-shot migrations, then the API on port 8000):
+
+```bash
+docker compose up --build
+curl localhost:8000/health
+```
+
+For development (API and tests on the host, only Postgres in Docker):
 
 ```bash
 cp .env.example .env
-docker compose up -d --wait          # Postgres 17 on localhost:5455
+docker compose up -d --wait db       # Postgres 17 on localhost:5455
 uv sync
 uv run alembic upgrade head
 uv run uvicorn ledger_service.main:app --reload
@@ -94,12 +125,10 @@ Optional: `uv run python scripts/seed.py` fills the dev database with ~500k tran
 
 ## Known limitations / roadmap
 
-- Pagination index `(account_id, created_at, id)` is being added with an `EXPLAIN ANALYZE`
-  before/after comparison; `created_at` should become `timestamptz`.
 - No authentication yet.
 - `POST /transfers` is not idempotent: a client retry after a timeout transfers twice.
   Planned fix: an `Idempotency-Key` header with a unique constraint.
-- Dockerfile is next (CI already runs lint and the full test suite on every push).
+- CI builds the Docker image but does not yet start the stack and hit `/health`.
 
 ## Built with AI assistance
 
