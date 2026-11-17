@@ -123,6 +123,24 @@ uv run ruff check . && uv run ruff format --check .
 Optional: `uv run python scripts/seed.py` fills the dev database with ~500k transactions
 (one account with 300k) for practising `EXPLAIN ANALYZE`.
 
+## Security
+
+Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
+
+| Phase | Controls | Status |
+|---|---|---|
+| 0 | GitHub settings: Dependabot alerts and security updates, private vulnerability reporting, secret scanning with push protection, `main` protected from deletion and force-push | Done |
+| 1 | Actions pinned to commit SHAs, least-privilege workflow token (`contents: read`), Dependabot version updates, ruff security rules (`S`), `pip-audit` of the lockfile in CI, `SECURITY.md`, `CODEOWNERS` | Done |
+| 2 | CodeQL, Semgrep, dependency review on PRs, Trivy image scan, SBOM, SARIF in code scanning, base-image digest pinning | Planned |
+| 3 | Custom Semgrep rules with tests, aimed at this codebase: no `float` for money, no string-built SQL in `text()` / `execute()`, balance changes only through the row-locking accessor | Planned |
+
+Known issues:
+
+- No authentication on the API yet.
+- `POST /transfers` is not idempotent yet; an `Idempotency-Key` header is planned.
+- The `ledger:ledger` credentials in `docker-compose.yml`, CI and the config defaults are
+  local development values only.
+
 ## Known limitations / roadmap
 
 - No authentication yet.
