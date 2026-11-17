@@ -74,3 +74,11 @@ class CurrencyMismatch(BusinessRuleViolation):
 class InvalidCursor(BusinessRuleViolation):
     def __init__(self) -> None:
         super().__init__("Invalid pagination cursor")
+
+
+class IdempotencyKeyReuse(BusinessRuleViolation):
+    """The same Idempotency-Key was sent with a different request body  ->  HTTP 422."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"Idempotency-Key {key!r} was already used with a different request")
+        self.key = key
